@@ -1,0 +1,203 @@
+---
+title: "Pentathlon II"
+output: pdf_document
+author: Swagata Chakraborty
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup
+
+Create an rmarkdown document in which you calculate the LTV for each of the plans over a period of 104 weeks using the average subscription churn and revenue numbers provided on belowb. Generate a line plot to compare the five LTV curves. Are your results consistent with your answer to question 3 in the pentathlon-II.pdf file on Dropbox? Why (or why not)?
+
+## Hints
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>. Go to http://commonmark.org/help/ for a 10-minute interactive Markdown tutorial
+
+When you click the **Knit** button in Rstudio, a document will be generated that includes both the text you type as well as the output of any embedded R-code chunks within the document.
+
+## Analysis
+
+The code chunk below sets the values for the different variables you should use in your analysis. Note that you still have to calculate the weekly discount rate based on the annual discount rate mentioned below.
+
+```{r}
+weeks <- 1:104
+discount <- .1 ## annual discount rate
+discount_weekly <- discount/52
+cost <- .6
+net_factor <- 0.4
+
+
+## Pentathlon II (1 email per week)
+schurn1 <- .005650 		## subscription churn
+rev_sub1 <- .29 		  ## average revenue from subscribers
+rev_unsub1 <- .1225 	## average revenue from non-subscribers
+
+
+## Pentathlon II (2 emails per week)
+schurn2 <- .00755
+rev_sub2 <- .34125
+rev_unsub2 <- .12375
+
+## Pentathlon II (3 emails per week)
+schurn3 <- 0.02345
+rev_sub3 <- .35375
+rev_unsub3 <- .15
+
+## Pentathlon II (4 emails per week)
+schurn4 <- 0.040388
+rev_sub4 <- .355
+rev_unsub4 <- .1325
+
+## Pentathlon II (5 emails per week)
+schurn5 <- 0.063025
+rev_sub5 <- .358750
+rev_unsub5 <- .13
+
+
+
+```
+
+Create a code chunk that contains a function that you can call to calculate the LTV for each of the 5 email plans.
+
+```{r}
+## insert ltv function below
+## determine what arguments the function needs to generate the required
+## return value
+ltv <- function(schurn, rev_sub, rev_unsub) {
+  ## weekwise effective subscribers after churning through unsubscription 
+  subscriber <- rep(100,104)
+    for(i in 2:104){
+      subscriber[i] <- subscriber[i-1] -  subscriber[i-1]*(schurn)
+    }
+  ## weekwise effective unsubscribers  being added after churning through unsubscription   
+  unsubscriber <- rep(0,104)
+  total_cust <- rep(100,104) 
+    
+    for(i in 2:104){
+      unsubscriber[i] <- unsubscriber[i-1] +  (subscriber[i-1]- subscriber[i])
+      total_cust[i] <- unsubscriber[i] +  subscriber[i]
+      
+    }
+    ## total customers will stay the same over the weeks as everybody is buying
+    ## and churning implies conversion from subscriber to non- subscriber only
+    
+    ## profit = (1-0.6)* revenue (respective subscriber or unsubscriber category)
+    rev_sub_post_attr <- rev_sub* subscriber
+    profit_sub_post_attr <- 0.4*rev_sub_post_attr
+    
+    rev_unsub_post_attr <- rev_unsub*unsubscriber
+    profit_unsub_post_attr <- 0.4*rev_unsub_post_attr
+    
+    ## effective profit after converting to NPV; 
+    ## weekly discount rate=(annual discount rate)/(52 * 100)
+    effective_subs_profit <- rep(0,104)
+    for(i in 1:104){
+     effective_subs_profit[i] <- profit_sub_post_attr[i] /(1+discount_weekly)**i 
+    }
+
+    effective_unsubs_profit <- rep(0,104)
+    for(i in 1:104){
+     effective_unsubs_profit[i] <- profit_unsub_post_attr[i] /(1+discount_weekly)**i 
+    }
+
+   ## customer overall profit = weekly eff profit from subscribers and unsubscribers.
+    total_cust_profit <- effective_subs_profit + effective_unsubs_profit
+    total_cust_profit_std <- total_cust_profit/100
+    
+    
+   ## Cumulated LTV vector = previos weeks LTV + addtional effective profit expected at the end of 
+   ## current week LTV[week i] = LTV[week i-1] + additional value for last week
+    LTV_vect <- rep(total_cust_profit_std[1],104)
+    for( i in 2:104){
+      LTV_vect[i] <- LTV_vect[i-1]+ total_cust_profit_std[i]
+    }
+    
+    
+    LTV_sub_104 <- sum(effective_subs_profit)
+    LTV_unsub_104 <- sum(effective_unsubs_profit)
+    LTV_total_104 <- LTV_sub_104 + LTV_unsub_104
+
+    ##For 100 customer --> per customer
+    LTV_total_std_104 <- LTV_total_104/100
+    print(LTV_total_std_104)
+    return(LTV_vect)
+}
+
+
+```
+
+Next, create a tibble (or data.frame) with 6 columns. Five columns for the LTV series for each of the plans and one column for the `weeks` variable defined above. Call the `ltv` function you created above to fill-in the columns.
+
+```{r}
+## LTV vectors for 5 different email schemes:
+e1 <- ltv(schurn1, rev_sub1, rev_unsub1)
+e2 <- ltv(schurn2, rev_sub2, rev_unsub2)
+e3 <- ltv(schurn3, rev_sub3, rev_unsub3)
+e4 <- ltv(schurn4, rev_sub4, rev_unsub4)
+e5 <- ltv(schurn5, rev_sub5, rev_unsub5)
+
+## create the tibble (data.frame)
+LTV_Tibble <- data.frame(weeks, e1, e2,e3,e4,e5)
+
+print("First 6 weeks")
+head(LTV_Tibble)
+
+print("Last 6 weeks")
+tail(LTV_Tibble)
+```
+
+
+Next, generate three line plots that compare the LTV curves for each of the five plans. The first graphs should plot weeks 1 through 8. The second graph should plot weeks 1 through 52 and the final graph should show weeks 1 through 104.
+
+
+## PLOTS
+* Comparison of  weekwise LTV for different email frequency for week 1 to week 8
+
+```{r, echo=FALSE,  warning=FALSE}
+## generate graph 1
+library(ggplot2)
+#install.packages(tidy)
+library(tidyverse)
+```
+
+```{r}
+## generate graph 1
+LTV_gather_8 <- gather(data = LTV_Tibble[1:8,],key = "Email", value = "LTV", -weeks)
+colnames(LTV_gather_8) <- c("Week", "Emails_per_week", "Weekwise_LTV")
+
+ggplot(data = LTV_gather_8,mapping = aes(x = Week,y=Weekwise_LTV, color= Emails_per_week))+geom_line()+ggtitle("Comparison of weekwise LTV for different email frequency: week 1:8") +
+  xlab("Week") + ylab("Cumulative LTV ($)")
+```
+
+
+* Comparison of  weekwise LTV for different email frequency for week 1 to week 52
+
+```{r}
+## generate graph 2
+LTV_gather_52 <- gather(data = LTV_Tibble[1:52,],key = "Email", value = "LTV", -weeks)
+colnames(LTV_gather_52) <- c("Week", "Emails_per_week", "Weekwise_LTV")
+
+ggplot(data = LTV_gather_52,mapping = aes(x = Week,y=Weekwise_LTV, color= Emails_per_week))+geom_line()+ggtitle("Comparison of weekwise LTV for different email frequency: week 1-52") +
+  xlab("Week: 1:52") + ylab("Cumulative LTV in ($)")
+
+```
+
+Comparison of  weekwise LTV for different email frequency for week 1 to week 104
+
+```{r}
+## generate graph 3
+LTV_gather_104 <- gather(data = LTV_Tibble[1:104,],key = "Email", value = "LTV", -weeks)
+colnames(LTV_gather_104) <- c("Week", "Emails_per_week", "Weekwise_LTV")
+
+ggplot(data = LTV_gather_104,mapping = aes(x = Week,y=Weekwise_LTV, color= Emails_per_week))+geom_line()+ggtitle("Comparison of weekwise LTV for different email frequency: week 1-104") +
+  xlab("Week 1:104") + ylab("Cumulative LTV in ($)")
+
+```
+
+Please generate a pdf file with your results and upload it to TED together with a document containing your answers to all the questions listed in the pentathlon-II.pdf file on Dropbox.
+
+When you have finished editing this rmarkdown document make sure to save, commit, and push it to GitLab. We will collect all the rmarkdown files from GitLab after the due date.

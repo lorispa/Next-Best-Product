@@ -1,0 +1,849 @@
+---
+title: "Pentathlon III: Next Product to Buy Modeling"
+output: html_document
+---
+
+* Team-lead gitlab id:
+* Team-lead gitlab username:
+* Group number:
+* Group name:
+* Team member names:
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+  dpi = 96,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE
+)
+
+## load radiant packages if neededi
+if (!exists("r_environment")) library(radiant)
+```
+
+<style>
+.table {
+  width: auto;
+}
+ul, ol {
+  padding-left: 18px;
+}
+pre, code, pre code {
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+  background-color: #ffffff;
+}
+</style>
+
+## Setup
+
+Please complete this Rmarkdown document by answering the questions in `pentathlon-nptb.pdf` on Dropbox (week8/readings/). The code block below will load the data you need. Please DO NOT change the code used to load the data. Create an HTML file with all your results and comments and push both the Rmarkdown and HTML file to GitLab when you are done. As always, all results MUST be reproducible (i.e., the TA and I must be able to recreate the HTML from the R-markdown file without changes or errors).
+
+Good luck!
+
+```{r}
+## Loading the data from Dropbox/MGTA455-2018/data/
+pentathlon_nptb_wrk <- readr::read_rds(file.path(radiant.data::find_dropbox(), "MGTA455-2018/data/pentathlon_nptb.rds"))
+if (!exists("r_data")) r_data <- list()
+r_data[["pentathlon_nptb_wrk"]] <- readr::read_rds(file.path(find_dropbox(), "MGTA455-2018/data/pentathlon_nptb.rds"))
+r_data[["pentathlon_nptb_wrk"]] <- readr::read_rds(file.path(find_dropbox(), "MGTA455-2018/data/pentathlon_nptb.rds"))
+```
+
+## Question answers
+
+Loading libraries
+```{r}
+library(radiant)
+library(ranger)
+install.packages("randomForest")
+library(randomForest)
+library(readr)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(xgboost)
+library(Matrix)
+library(radiant)
+library(methods)
+library(caret)
+library(data.table)
+install.packages("mlr")
+library(mlr)
+```
+
+## Dividing training, validation, representative datasets:
+```{r}
+r_data[["pentathlon_nptb_train"]]  <- r_data[["pentathlon_nptb_wrk"]] %>% filter(training==1)
+r_data[["pentathlon_nptb_validation"]] <- r_data[["pentathlon_nptb_wrk"]] %>% filter(training==0)
+r_data[["pentathlon_nptb_representative"]] <- r_data[["pentathlon_nptb_wrk"]] %>% filter(is.na(training))
+
+## note training and valid both have 50% buyers and 50% non buyers, but rep sample has 1% buyers and 99% non buyers.
+```
+
+
+## Logistic Regression  Base Model:
+
+
+Logistic
+
+a) Regression:
+```{r}
+result_logistic <- logistic(
+  dataset = "pentathlon_nptb_train", 
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  int = c(
+    "message:age", "message:gender", 
+    "message:income", "message:education", 
+    "message:children", "message:freq_endurance", 
+    "message:freq_strength", 
+    "message:freq_water", 
+    "message:freq_team", 
+    "message:freq_backcountry", 
+    "message:freq_winter", 
+    "message:freq_racquet"
+  ), 
+  check = "standardize"
+)
+summary(result_logistic, sum_check = "confint")
+```
+
+
+```{r}
+## training:
+pentathlon_nptb_train <- as.data.frame(r_data[["pentathlon_nptb_train"]])
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='endurance'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_endurance")
+
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='strength'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_strength")
+
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='water'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_water")
+
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='team'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_team")
+
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='backcountry'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_backcountry")
+
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='winter'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_winter")
+
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_train", pred_cmd = "message='racquet'")
+store(pred, data = "pentathlon_nptb_train", name = "p_logit_racquet")
+
+
+
+
+
+## Validation:
+pentathlon_nptb_validation <- as.data.frame(r_data[["pentathlon_nptb_validation"]])
+
+# Probability function for validation
+# predict probabilities for all seven categories of messages and storing them
+predict_probabilities <- function(){
+temp <<- pentathlon_nptb_validation$message
+
+pentathlon_nptb_validation$message <<-  "endurance"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_endurance")
+
+pentathlon_nptb_validation$message<<- "strength"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_strength")
+
+pentathlon_nptb_validation$message<<- "water"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_water")
+
+pentathlon_nptb_validation$message<<- "team"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_team")
+
+pentathlon_nptb_validation$message<<- "backcountry"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_backcountry")
+
+pentathlon_nptb_validation$message<<- "winter"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_winter")
+
+pentathlon_nptb_validation$message<<- "racquet"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_validation")
+store(pred, data = "pentathlon_nptb_validation", name = "p_logit_racquet")
+
+
+pentathlon_nptb_validation$message <<- temp
+
+}
+
+predict_probabilities()
+
+
+
+
+
+
+## Representative:
+pentathlon_nptb_representative <- as.data.frame(r_data[["pentathlon_nptb_representative"]])
+predict_probabilities_representatives <- function(){
+temp <<- pentathlon_nptb_representative$message
+
+pentathlon_nptb_representative$message <<-  "endurance"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_endurance")
+
+pentathlon_nptb_representative$message<<- "strength"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_strength")
+
+pentathlon_nptb_representative$message<<- "water"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_water")
+
+pentathlon_nptb_representative$message<<- "team"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_team")
+
+pentathlon_nptb_representative$message<<- "backcountry"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_backcountry")
+
+pentathlon_nptb_representative$message<<- "winter"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_winter")
+
+pentathlon_nptb_representative$message<<- "racquet"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_racquet")
+
+
+pentathlon_nptb_representative$message <<- temp
+
+}
+
+predict_probabilities_representatives()
+
+
+pentathlon_nptb_representative <- pentathlon_nptb_representative %>% 
+  mutate(pAdj_logit_endurance = p_logit_endurance/ ((p_logit_endurance + (1-p_logit_endurance)*(1-0.01)/0.01)),
+         pAdj_logit_strength = p_logit_strength/ ((p_logit_strength + (1-p_logit_strength)*(1-0.01)/0.01)),
+         pAdj_logit_water = p_logit_water/ ((p_logit_water + (1-p_logit_water)*(1-0.01)/0.01)),
+         pAdj_logit_team = p_logit_team/ ((p_logit_team + (1-p_logit_team)*(1-0.01)/0.01)),
+         pAdj_logit_backcountry = p_logit_backcountry/ ((p_logit_backcountry + (1-p_logit_backcountry)*(1-0.01)/0.01)),
+         pAdj_logit_winter = p_logit_winter/ ((p_logit_winter + (1-p_logit_winter)*(1-0.01)/0.01)),
+         pAdj_logit_racquet = p_logit_racquet/((p_logit_racquet + (1-p_logit_racquet)*(1-0.01)/0.01))
+         )
+```
+
+# Whom to send email
+
+# Question 1
+```{r}
+
+# which department will send email depending upon only probabilities
+pentathlon_nptb_validation <- pentathlon_nptb_validation %>% mutate(to_offer = c("endurance","strength","water","team","backcountry","winter","racquet")[which.pmax(p_logit_endurance, p_logit_strength, p_logit_water, p_logit_team,p_logit_backcountry, p_logit_winter,p_logit_racquet )])
+
+#pentathlon_nptb_representative:
+
+# which department will send email depending upon only probabilities
+pentathlon_nptb_representative <- pentathlon_nptb_representative %>% mutate(to_offer = c("endurance","strength","water","team","backcountry","winter","racquet")[which.pmax(pAdj_logit_endurance, pAdj_logit_strength, pAdj_logit_water, pAdj_logit_team,pAdj_logit_backcountry, pAdj_logit_winter,pAdj_logit_racquet )])
+
+
+
+```
+
+
+Calculate the probability of purchase for each of the customers after sending each category of messages. Find out the message category for which the probability of purchase is maximum for each of the customers. the determined message will be that corresponding message category which has been mentioned in "to_offer" column.
+
+
+# Question 2
+
+```{r}
+
+result <- pivotr(
+  dataset = "pentathlon_nptb_representative", 
+  cvars = "to_offer",
+  normalize = "total",
+  tabsort = "desc(n)"
+)
+summary(result, perc=TRUE)
+
+```
+
+
+
+# Question 3
+
+Linear regression to predict Order size:
+
+```{r}
+pentathlon_nptb_train_bought <- filter(pentathlon_nptb_train, buyer=="yes")
+result_linear <- regress(
+  dataset = "pentathlon_nptb_train_bought", 
+  rvar = "total_os", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  
+  int = c(
+  "message:income"
+    
+  ), 
+  check = "standardize"
+)
+summary(result_linear, sum_check = c("rmse", "vif"))
+# store(result, name = "residuals_reg")
+```
+
+# Ordersize prediction function
+```{r}
+#=============================================
+# predict total ordersize for all seven categories of messages and storing them
+predict_OS <- function(){
+  
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='endurance'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_endurance")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='strength'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_strength")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='water'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_water")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='team'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_team")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='backcountry'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_backcountry")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='winter'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_winter")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_validation", pred_cmd = "message='racquet'")
+store(pred, data = "pentathlon_nptb_validation", name = "predict_os_racquet")
+}
+
+
+predict_OS_representative <- function(){
+  
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='endurance'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_endurance")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='strength'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_strength")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='water'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_water")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='team'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_team")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='backcountry'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_backcountry")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='winter'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_winter")
+
+pred <- predict(result_linear, pred_data = "pentathlon_nptb_representative", pred_cmd = "message='racquet'")
+store(pred, data = "pentathlon_nptb_representative", name = "predict_os_racquet")
+}
+
+predict_OS_representative()
+
+
+```
+
+
+# Profit function
+```{r}
+# few ordersize came negative- make them zero
+# pentathlon_nptb_validation <- pentathlon_nptb_validation %>% mutate(predict_os_endurance= ifelse(predict_os_endurance<0,0,predict_os_endurance),predict_os_strength= ifelse(predict_os_strength<0,0,predict_os_strength),predict_os_water= ifelse(predict_os_water<0,0,predict_os_water),predict_os_team= ifelse(predict_os_team<0,0,predict_os_team),predict_os_backcountry= ifelse(predict_os_backcountry<0,0,predict_os_backcountry), predict_os_winter= ifelse(predict_os_winter<0,0,predict_os_winter),predict_os_racquet= ifelse(predict_os_racquet<0,0,predict_os_racquet))
+
+profit <- function(){
+
+# To whom mail to be sent based on profit
+pentathlon_nptb_validation <- pentathlon_nptb_validation %>% mutate(to_offer_profit = c("endurance","strength","water","team","backcountry","winter","racquet")[which.pmax(predict_endurancei*predict_os_endurance, predict_strengthi*predict_os_strength, predict_wateri*predict_os_water, predict_teami*predict_os_team,predict_backcountryi*predict_os_backcountry, predict_winteri*predict_os_winter,predict_racqueti*predict_os_racquet)])
+
+
+# What is the expected profit from each customer
+pentathlon_nptb_validation <- pentathlon_nptb_validation %>% mutate(profit_expected = 0.40*pmax(predict_endurancei*predict_os_endurance, predict_strengthi*predict_os_strength, predict_wateri*predict_os_water, predict_teami*predict_os_team,predict_backcountryi*predict_os_backcountry, predict_winteri*predict_os_winter,predict_racqueti*predict_os_racquet))
+
+#Total expected profit
+Model_profit <- sum(pentathlon_nptb_validation$profit_expected)
+
+#total actual profit against which the above should be compared
+
+Original_profit <- sum(pentathlon_nptb_validation$total_os*.4)
+
+###****Profit is less than random message which is weird... means both the model (predicted probabilities and ordersize estimation) requires finetuning.***###
+return(Model_profit)
+
+}
+
+
+
+profit_reprentative <- function(){
+
+# To whom mail to be sent based on profit
+pentathlon_nptb_representative <<- pentathlon_nptb_representative %>% mutate(to_offer_profit = c("endurance","strength","water","team","backcountry","winter","racquet")[which.pmax(pAdj_logit_endurance*predict_os_endurance, pAdj_logit_strength*predict_os_strength, pAdj_logit_water*predict_os_water, pAdj_logit_team*predict_os_team,pAdj_logit_backcountry*predict_os_backcountry, pAdj_logit_winter*predict_os_winter,pAdj_logit_racquet*predict_os_racquet)])
+
+# What is the expected profit from each customer
+pentathlon_nptb_representative <- pentathlon_nptb_representative %>% mutate(profit_expected = 0.40*pmax(pAdj_logit_endurance*predict_os_endurance, pAdj_logit_strength*predict_os_strength, pAdj_logit_water*predict_os_water, pAdj_logit_team*predict_os_team,pAdj_logit_backcountry*predict_os_backcountry, pAdj_logit_winter*predict_os_winter,pAdj_logit_racquet*predict_os_racquet))
+
+#Total expected profit
+Model_profit <- sum(pentathlon_nptb_representative$profit_expected)
+
+#total actual profit against which the above should be compared
+
+
+
+###****Profit is less than random message which is weird... means both the model (predicted probabilities and ordersize estimation) requires finetuning.***###
+return(Model_profit)
+
+}
+PROFIT <- profit_reprentative()
+
+Original_profit <- sum(pentathlon_nptb_representative$total_os*.4)
+
+```
+
+# Question 3
+
+#Approach
+
+
+# Question 4
+
+```{r}
+
+result <- pivotr(
+  dataset = "pentathlon_nptb_representative", 
+  cvars = "to_offer_profit",
+  normalize = "total",
+  tabsort = "desc(n)"
+)
+summary(result, perc=TRUE)
+
+```
+
+# Average profit per emailed customer = `r round(PROFIT/100000,2)`
+
+# Question 6
+```{r}
+Endurance <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_endurance*pentathlon_nptb_representative$predict_os_endurance)
+
+Strength <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_strength*pentathlon_nptb_representative$predict_os_strength)
+
+Water <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_water*pentathlon_nptb_representative$predict_os_water)
+
+Team <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_team*pentathlon_nptb_representative$predict_os_team)
+
+Backcountry <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_backcountry*pentathlon_nptb_representative$predict_os_backcountry)
+
+Winter <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_winter*pentathlon_nptb_representative$predict_os_winter)
+
+Racquet <- mean(0.4*pentathlon_nptb_representative$pAdj_logit_racquet*pentathlon_nptb_representative$predict_os_racquet)
+
+Endurance
+Strength
+Water
+Team
+Backcountry
+Winter
+Racquet
+
+```
+
+
+
+
+============================================================================================================================
+
+
+
+
+
+
+
+
+
+## XGBoost Model (NOT FINALIZED-- INCOMPLETE):
+```{r}
+train  <- r_data[["pentathlon_nptb_wrk"]] %>% filter(training==1)
+validation <- r_data[["pentathlon_nptb_wrk"]] %>% filter(training==0)
+xgb_pentathlon_nptb_rep <- r_data[["pentathlon_nptb_wrk"]] %>% filter(is.na(training))
+```
+
+```{r}
+xgb_pentathlon_nptb_train <- train[,c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  )]
+xgb_pentathlon_nptb_validation <-validation[,c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  )]
+```
+
+
+
+  rvar = "buyer", 
+  evar = c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  ), 
+  lev = "yes", 
+  int = c(
+    "message:age", "message:gender", 
+    "message:income", "message:education", 
+    "message:children", "message:freq_endurance", 
+    "message:freq_strength", 
+    "message:freq_water", 
+    "message:freq_team", 
+    "message:freq_backcountry", 
+    "message:freq_winter", 
+    "message:freq_racquet"
+  ),
+  
+```{r}
+##XGBoost
+validation$buyer <- ifelse(validation$buyer == "yes", 1,0)
+train$buyer <- ifelse(train$buyer == "yes", 1,0)
+
+dtrain <- xgb.DMatrix(data=data.matrix(xgb_pentathlon_nptb_train), label=train$buyer)
+dvalidation <- xgb.DMatrix(data=data.matrix(xgb_pentathlon_nptb_validation), label=validation$buyer)
+
+watchlist <- list(validation=dvalidation, train=dtrain)
+
+param <- list(
+  objective = "binary:logistic",
+  eta = 0.0025,
+  gamma= 0.10,
+  #max_depth = 8,
+  subsample = 0.30,
+  colsample_bytree = .75,
+  scale_pos_weight = 0.97,
+  min_child_weight = 30,
+  max_delta_step = 7,
+  lambda = 20
+)
+
+xgb_model <- xgb.train( params = param,
+                  data = dtrain,
+                  nfold=3,
+                  eval_metric="logloss",
+                  print_every_n = 50,
+                  nrounds = 4400,
+                  num_boost_round=10,
+                  seed = 123,
+                  verbose = 1,
+                  early_stopping_rounds = 500,
+                  watchlist = watchlist
+)
+
+pred <- predict(xgb_model, data.matrix(xgb_pentathlon_nptb_validation))
+r_data[["pentathlon_nptb_validation"]]$xgb_prob <- pred
+
+imp <- xgb.importance (feature_names = colnames(dtrain),model = xgb_model)
+xgb.plot.importance (importance_matrix = imp)
+```
+
+
+```{r}
+xgb_grid_1 = expand.grid(
+nrounds = 1000,
+eta = c(0.01, 0.001, 0.0001),
+max_depth = c(2, 4, 6, 8, 10),
+gamma = 1
+)
+ 
+# pack the training control parameters
+xgb_trcontrol_1 = trainControl(
+method = "cv",
+number = 5,
+verboseIter = TRUE,
+returnData = FALSE,
+returnResamp = "all",                                                        # save losses across all models
+classProbs = TRUE,                                                           # set to TRUE for AUC to be computed
+summaryFunction = twoClassSummary,
+allowParallel = TRUE
+)
+ 
+# train the model for each parameter combination in the grid,
+#   using CV to evaluate
+xgb_train_1 = train(
+x = as.matrix(df_train %>%
+select(-SeriousDlqin2yrs)),
+y = as.factor(df_train$SeriousDlqin2yrs),
+trControl = xgb_trcontrol_1,
+tuneGrid = xgb_grid_1,
+method = "xgbTree"
+)
+ 
+# scatter plot of the AUC against max_depth and eta
+ggplot(xgb_train_1$results, aes(x = as.factor(eta), y = max_depth, size = ROC, color = ROC)) +
+geom_point() +
+theme_bw() +
+scale_size_continuous(guide = "none")
+```
+
+
+
+#### using Caret
+
+```{r}
+#set variable names
+setcol <- c(
+    "message", "age", "gender", "income", "education", "children", 
+    "freq_endurance", "freq_strength", "freq_water", "freq_team", 
+    "freq_backcountry", "freq_winter", "freq_racquet"
+  )
+
+train_0<-r_data[["pentathlon_nptb_wrk"]] %>% filter(training==1)
+test_0<- r_data[["pentathlon_nptb_wrk"]] %>% filter(training==0)
+rep_0<- r_data[["pentathlon_nptb_wrk"]] %>% filter(is.na(training))
+
+train_labels <- as.numeric(train_0$buyer)-1
+test_labels <- as.numeric(test_0$buyer)-1
+rep_labels <- as.numeric(rep_0$buyer)-1
+
+train <-train_0[,setcol]
+test <-test_0[,setcol]
+rep <-rep_0[,setcol]
+
+# one-hot-encoding categorical features
+ohe_feats = c('message', 'age', 'gender')
+
+dummies_train <- dummyVars(~ message +  age + gender, data = train)
+dummies_test <- dummyVars(~ message +  age + gender, data = test)
+dummies_rep <- dummyVars(~ message +  age + gender, data = rep)
+
+df_all_oh_train <- as.data.frame(predict(dummies_train, newdata = train))
+df_all_oh_test <- as.data.frame(predict(dummies_test, newdata = test))
+df_all_oh_rep <- as.data.frame(predict(dummies_rep, newdata = rep))
+
+## train preprocessing:
+df_train_combined <- cbind(train[,-c(which(colnames(train) %in% ohe_feats))],df_all_oh_train)
+df_train_combined$age_30 <- as.numeric(ifelse(df_train_combined[,"age.< 30"] < 0,1,0))
+df_train_combined$age_31_44 <- as.numeric(ifelse(df_train_combined[,"age.30 to 44"] < 0,1,0))
+df_train_combined$age_45_59 <- as.numeric(ifelse(df_train_combined[,"age.45 to 59"] < 0,1,0))
+df_train_combined$age_60 <- as.numeric(ifelse(df_train_combined[,"age.>= 60"] < 0,1,0))
+
+
+df_test_combined <- cbind(test[,-c(which(colnames(test) %in% ohe_feats))],df_all_oh_test)
+df_test_combined$age_30 <- as.numeric(ifelse(df_test_combined[,"age.< 30"] < 0,1,0))
+df_test_combined$age_31_44 <- as.numeric(ifelse(df_test_combined[,"age.30 to 44"] < 0,1,0))
+df_test_combined$age_45_59 <- as.numeric(ifelse(df_test_combined[,"age.45 to 59"] < 0,1,0))
+df_test_combined$age_60 <- as.numeric(ifelse(df_test_combined[,"age.>= 60"] < 0,1,0))
+
+df_rep_combined <- cbind(rep[,-c(which(colnames(rep) %in% ohe_feats))],df_all_oh_rep)
+df_rep_combined$age_30 <- as.numeric(ifelse(df_rep_combined[,"age.< 30"] < 0,1,0))
+df_rep_combined$age_31_44 <- as.numeric(ifelse(df_rep_combined[,"age.30 to 44"] < 0,1,0))
+df_rep_combined$age_45_59 <- as.numeric(ifelse(df_rep_combined[,"age.45 to 59"] < 0,1,0))
+df_rep_combined$age_60 <- as.numeric(ifelse(df_rep_combined[,"age.>= 60"] < 0,1,0))
+
+#preparing matrix 
+dtrain <- xgb.DMatrix(data = data.matrix(df_train_combined),label = train_labels) 
+dtest <- xgb.DMatrix(data = data.matrix(df_test_combined),label=test_labels)
+drep <- xgb.DMatrix(data = data.matrix(df_rep_combined),label=rep_labels)
+
+#default parameters
+params <- list(
+  booster = "gbtree", 
+  objective = "binary:logistic", 
+  eta=0.003, 
+  gamma=0, 
+  max_depth=6, 
+  min_child_weight=1, 
+  subsample=1, 
+  colsample_bytree=1)
+
+
+watchlist <- list(validation=dtest, train=dtrain)
+
+
+# param <- list(
+#   objective = "binary:logistic",
+#   eta = 0.0025,
+#   gamma= 0.10,
+#   #max_depth = 8,
+#   subsample = 0.30,
+#   colsample_bytree = .75,
+#   scale_pos_weight = 0.97,
+#   min_child_weight = 30,
+#   max_delta_step = 7,
+#   lambda = 20
+# )
+
+xgbcv <- xgb.cv( 
+  params = params, 
+  data = dtrain, 
+  nrounds = 1000, 
+  nfold = 4, 
+  showsd = T, 
+  stratified = T, 
+  print.every.n = 10, 
+  early.stop.round = 200, 
+  maximize = F)
+##best iteration = 79
+
+
+min(xgbcv$test.error.mean)
+
+
+xgb_model <- xgb.train( params = params,
+                  data = dtrain,
+                  nfold=3,
+                  eval_metric="error",
+                  print_every_n = 50,
+                  nrounds = 4400,
+                  num_boost_round=10,
+                  seed = 123,
+
+                  verbose = 1,
+                  early_stopping_rounds = 500,
+                  watchlist = watchlist
+)
+
+xgbpred <- predict(xgb_model, dtest, type ="classification")
+
+
+## error rate
+err <- mean(as.numeric(xgbpred > 0.5) != test_labels)
+print(paste("test-error=", err))
+
+
+## Confusion Matrix
+prediction <- as.numeric(xgbpred > 0.5)
+print(head(prediction))
+confusionMatrix (prediction, test_labels)
+
+#view variable importance plot
+mat <- xgb.importance (feature_names = colnames(dtrain),model = xgb_model)
+xgb.plot.importance (importance_matrix = mat[1:20]) 
+
+
+
+
+# auc_xgb <- max(xgb_model$results$ROC)
+# 
+# plot(xgb_model)
+# summary(xgb_model)
+
+
+
+```
+
+
+
+## predicting customized messages:
+```{r}
+pentathlon_nptb_train  <- as.data.frame(r_data[["pentathlon_nptb_wrk"]] )%>% filter(training==1)
+pentathlon_nptb_validation <- as.data.frame(r_data[["pentathlon_nptb_wrk"]]) %>% filter(training==0)
+pentathlon_nptb_representative <- as.data.frame(r_data[["pentathlon_nptb_wrk"]]) %>% filter(is.na(training))
+
+
+## Validation:
+temp <<- pentathlon_nptb_validation$message
+
+pentathlon_nptb_validation$message <-  "endurance"
+dtest <- xgb.DMatrix(data = data.matrix(df_test_combined),label=test_labels)
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_endurance <- pred
+
+
+pentathlon_nptb_validation$message <- "strength"
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_strength <- pred
+
+
+pentathlon_nptb_validation$message <- "water"
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_water <- pred
+
+
+pentathlon_nptb_validation$message <- "team"
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_team <- pred
+
+
+pentathlon_nptb_validation$message <- "backcountry"
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_backcountry <- pred
+
+
+pentathlon_nptb_validation$message <- "winter"
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_winter <- pred
+
+
+pentathlon_nptb_validation$message <- "racquet"
+pred <- predict(xgb_model, dtest)
+pentathlon_nptb_validation$p_xgb_racquet <- pred
+
+
+
+pentathlon_nptb_validation$message <- temp
+
+
+
+
+## representative:
+temp <<- pentathlon_nptb_representative$message
+
+pentathlon_nptb_representative$message <<-  "endurance"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_endurance")
+
+pentathlon_nptb_representative$message<<- "strength"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_strength")
+
+pentathlon_nptb_representative$message<<- "water"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_water")
+
+pentathlon_nptb_representative$message<<- "team"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_team")
+
+pentathlon_nptb_representative$message<<- "backcountry"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_backcountry")
+
+pentathlon_nptb_representative$message<<- "winter"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_winter")
+
+pentathlon_nptb_representative$message<<- "racquet"
+pred <- predict(result_logistic, pred_data = "pentathlon_nptb_representative")
+store(pred, data = "pentathlon_nptb_representative", name = "p_logit_racquet")
+
+
+pentathlon_nptb_representative$message <<- temp
+```
